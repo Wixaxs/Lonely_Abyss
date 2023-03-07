@@ -27,14 +27,16 @@ if level == 2:
 tile_types = 35
 x_player = 0
 y_player = 0
-damage = 10
+damage = 300
+health = 100
+
 potka = 3
 potka_x = 1
 potka_y = 1
 potka_x_prev = potka_x
 potka_y_prev = potka_y
 
-current_map = 'lvl1'
+current_map = (f'lvl{level}')
 portal_rect = (1,1,1,1)
 endportal_rect = (1,1,1,1)
 
@@ -46,7 +48,9 @@ drzwi_dol = pygame.image.load('img/mapa_labirynt/22.png').convert_alpha()
 healthbar_img = pygame.image.load('img/Healthbar/healthbar.png').convert_alpha()
 heal_card = pygame.image.load('img/potions/heal_card.png').convert_alpha()
 speed_card = pygame.image.load('img/potions/speed_card.png').convert_alpha()
+damage_card = pygame.image.load('img/potions/damage_card.png').convert_alpha()
 speedbar_img = pygame.image.load('img/potions/speed_bar.png').convert_alpha()
+damage_bar = pygame.image.load('img/potions/damage_bar.png').convert_alpha()
 start_btn_img = pygame.image.load('img/menu/start.png').convert_alpha()
 exit_btn_img = pygame.image.load('img/menu/exit.png').convert_alpha()
 start_img = pygame.image.load('img/menu/menu.png').convert_alpha()
@@ -75,6 +79,8 @@ class Potions(pygame.sprite.Sprite):
             self.image = pygame.image.load('img/potions/health.png').convert_alpha()
         elif type == 2:
             self.image = pygame.image.load('img/potions/speed.png').convert_alpha()
+        elif type == 3:
+            self.image = pygame.image.load('img/potions/damage.png').convert_alpha()
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
         self.grab = False
@@ -89,15 +95,18 @@ class Player(pygame.sprite.Sprite):
     def __init__(self, x, y):
         pygame.sprite.Sprite.__init__(self)
         # Health and player status
-        self.health = 100
+        self.health = health
         self.max_health = self.health
         self.alive = True
         self.shoot_cd = 0
         self.heal_potion_amount = 1
-        self.speed_potion_amount = 1
+        self.speed_potion_amount = 10
+        self.damage_potion_amount = 1
         self.runs = False
         self.speed_potion_cd = 0
         self.heal_potion_cd = 0
+        self.damage_potion_cd = 0
+        self.prev_damage = 10
 
         # Movement
         self.speed = 1
@@ -135,14 +144,28 @@ class Player(pygame.sprite.Sprite):
             self.alive = False
         if self.shoot_cd > 0:
             self.shoot_cd -= 1
+
+            # --- POTIONS ----- #
+
         if self.speed_potion_cd > 0:
             self.speed_potion_cd -= 1
+
         if self.speed_potion_cd == 0:
             self.speed = 1
+
         if self.speed >= 2:
             self.speed = 2
+
         if self.heal_potion_cd > 0:
             self.heal_potion_cd -= 1
+
+        if self.damage_potion_cd > 0:
+            self.damage_potion_cd -= 1
+
+        if self.damage_potion_cd == 1:
+            global damage
+            damage = damage / 2
+
 
     def shoot(self):
             if self.shoot_cd == 0:
@@ -192,6 +215,13 @@ class Player(pygame.sprite.Sprite):
                     self.speed += 1
                     self.speed_potion_amount -= 1
                     self.speed_potion_cd = 400
+        if self.damage_potion_amount > 0:
+            if self.damage_potion_cd == 0:
+                if keys[pygame.K_r]:
+                    global damage
+                    self.prev_damage = damage
+                    damage = damage * 2
+                    self.damage_potion_cd = 400
 
         # collisions
         for tile in world.obstacle_list:
@@ -210,7 +240,12 @@ class Player(pygame.sprite.Sprite):
         for bosses in boss_group:
             if bosses.health <= 0:
                 if self.rect.colliderect(endportal_rect):
-                    sys.exit()
+                    global health
+                    health += 100
+                    self.max_health = health
+                    damage += 20
+                    level_complete = True
+
         for potion in potions_group:
             if self.rect.colliderect(potion.rect):
                 potion.grab = True
@@ -218,6 +253,8 @@ class Player(pygame.sprite.Sprite):
                     self.speed_potion_amount += 1
                 if potion.type == 1:
                     self.heal_potion_amount += 1
+                if potion.type == 3:
+                    self.damage_potion_amount += 1
 
         self.rect.x += dx
         self.rect.y += dy
@@ -310,11 +347,16 @@ class World():
                         global portal_rect
                         portal_rect = (img_rect)
                     if tile == 32:
-                        bosses = Boss(x * tile_size, y * tile_size, 'b')
-                        boss_group.add(bosses)
+                        if level == 2:
+                            bosses = Boss(x * tile_size, y * tile_size, 'b', 5, 600)
+                            boss_group.add(bosses)
                     if tile == 14:
-                        enemy = Enemy(x * tile_size, y * tile_size)
-                        enemies_group.add(enemy)
+                        if level == 1 or level == 2:
+                            enemy = Enemy(x * tile_size, y * tile_size, 1, 100, 'z')
+                            enemies_group.add(enemy)
+                        if level == 3:
+                            enemy = Enemy(x * tile_size, y * tile_size, 5, 450, 'g')
+                            enemies_group.add(enemy)
                     if tile != -1 and tile != 14 and tile != 32:
                         self.world_list.append(tile_data)
                     if tile == 6 and tile != 23 and tile != 34 and tile == 24 and tile == 31 and tile == 22 and tile == 30 and tile == 4 and tile == 5 and tile == 12 and tile == 13 and tile == 20 and tile == 21 and tile == 25 and tile == 26 and tile == 27:
@@ -333,11 +375,11 @@ class World():
 
 
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self, x ,y):
+    def __init__(self, x ,y, damage, health,file):
         pygame.sprite.Sprite.__init__(self)
 
         # Health and enemy status
-        self.health = 100
+        self.health = health
         self.alive = True
         self.last_shot_time = 0
         self.attack = False
@@ -348,7 +390,7 @@ class Enemy(pygame.sprite.Sprite):
         self.distance_for_move = 150
         self.dx = 0
         self.dy = 0
-        self.damage = 1
+        self.damage = damage
 
         # enemy animation
         self.animation_list = []
@@ -359,12 +401,12 @@ class Enemy(pygame.sprite.Sprite):
 
         self.u_time = pygame.time.get_ticks()
         for i in range(5):
-            image = pygame.image.load(f'img/enemies/zstay/z{i}.png').convert_alpha()
+            image = pygame.image.load(f'img/enemies/enemystay/{file}{i}.png').convert_alpha()
             image = pygame.transform.scale(image, (int(image.get_width()), int(image.get_height())))
             self.animation_list.append(image)
 
         for i in range(7):
-            image1 = pygame.image.load(f'img/enemies/attack_animation_enemy/{i}.png').convert_alpha()
+            image1 = pygame.image.load(f'img/enemies/attack_animation_enemy/{file}{i}.png').convert_alpha()
             image1 = pygame.transform.scale(image1, (int(image1.get_width()), int(image1.get_height())))
             self.animation_list1.append(image1)
 
@@ -489,14 +531,14 @@ class Enemy(pygame.sprite.Sprite):
 
 
 class Boss(pygame.sprite.Sprite):
-    def __init__(self, x, y, file):
+    def __init__(self, x, y, file, damage, health):
         pygame.sprite.Sprite.__init__(self)
         self.image = pygame.image.load(f'img/enemies/{file}0.png')
         self.rect = self.image.get_rect()
         self.rect.center = (x, y)
-        self.damage = 5
+        self.damage = damage
         self.attack = False
-        self.health = 600
+        self.health = health
         self.max_health = self.health
         self.alive = True
         self.dx = 0
@@ -509,7 +551,7 @@ class Boss(pygame.sprite.Sprite):
         self.index = 0
         self.u_time = pygame.time.get_ticks()
         for i in range(5):
-            image = pygame.image.load(f'img/enemies/boss_attack/b{i}.png').convert_alpha()
+            image = pygame.image.load(f'img/enemies/boss_attack/{file}{i}.png').convert_alpha()
             image = pygame.transform.scale(image, (int(image.get_width()), int(image.get_height())))
             self.animation_list.append(image)
         self.img = self.animation_list[self.index]
@@ -624,11 +666,11 @@ class HealthBar():
         self.health = health
         self.max_health = max_health
 
-    def draw(self, health):
+    def draw(self, health, max_health):
         #update with new health
         self.health = health
         #calculate health ratio
-        ratio = self.health / self.max_health
+        ratio = self.health / max_health
         pygame.draw.rect(window, (210, 199, 220), (self.x, self.y, 100 * ratio, 30))
 
 
@@ -672,7 +714,8 @@ world.process_data(world_data)
 player = Player(x_player, y_player)
 attack = Attack()
 healthbar = HealthBar(45, 10, player.health, player.max_health)
-potion_duration = HealthBar(45, 50, player.speed_potion_cd, 400)
+speed_potion_duration = HealthBar(45, 50, player.speed_potion_cd, 400)
+damage_potion_duration = HealthBar(45,100, player.damage_potion_cd, 400)
 start_btn = Button(550,450 , start_btn_img, 0.5)
 exit_btn = Button(550, 530, exit_btn_img, 0.5)
 
@@ -695,6 +738,7 @@ while run:
     else:
         heal_potion_text = font.render(str(player.heal_potion_amount), True, (210, 199, 220))
         speed_potion_text = font.render(str(player.speed_potion_amount), True, (210, 199, 220))
+        damage_potion_text = font.render(str(player.damage_potion_amount), True, (210, 199, 220))
         clock.tick(fps)
         window.fill((255,255,255))
         world.draw()
@@ -725,7 +769,7 @@ while run:
                 potka = random.randint(1,9)
                 potka_x = enemy.rect.x
                 potka_y = enemy.rect.y
-                if potka >= 3 or potka <= 9:
+                if potka >= 4 or potka <= 9:
                     pass
                 if potka == 2:
                     potion = Potions(potka_x, potka_y, potka)
@@ -733,8 +777,12 @@ while run:
                 if potka == 1:
                     potion = Potions(potka_x, potka_y, potka)
                     potions_group.add(potion)
+                if potka == 3:
+                    potion = Potions(potka_x, potka_y, potka)
+                    potions_group.add(potion)
 
                 enemy.kill()
+
             if enemy.alive:
                 enemy.draw()
                 enemy.update_animation()
@@ -768,7 +816,7 @@ while run:
                 portal_rect = (0, 0, 0, 0)
                 level += 1
                 world_data = reset()
-                with open(f'img/map/lvl1boss2.csv', newline='') as csvfile:
+                with open(f'img/map/lvl{level}.csv', newline='') as csvfile:
                     reader = csv.reader(csvfile, delimiter=',')
                     for x, row in enumerate(reader):
                         for y, tile in enumerate(row):
@@ -788,20 +836,26 @@ while run:
             potion.custom_update()
 
         vignette(0, 0)
-        healthbar.draw(player.health)
+        healthbar.draw(player.health, player.max_health)
+
         if player.speed_potion_cd > 0:
-            potion_duration.draw(player.speed_potion_cd)
+            speed_potion_duration.draw(player.speed_potion_cd, 400)
             window.blit(speedbar_img, (0, 40))
+        if player.damage_potion_cd > 0:
+            damage_potion_duration.draw(player.damage_potion_cd, 400)
+            window.blit(damage_bar, (0, 90))
         window.blit(healthbar_img, (0, 0))
         window.blit(heal_card, (110, 600))
         window.blit(speed_card, (10, 600))
         window.blit(heal_potion_text, (110, 580))
         window.blit(speed_potion_text, (10, 580))
+        window.blit(damage_card, (210, 600))
+        window.blit(damage_potion_text, (210, 580))
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             sys.exit(0)
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             run = False
-
+    print(damage, player.health)
     pygame.display.update()
