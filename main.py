@@ -27,7 +27,7 @@ if level == 2:
 tile_types = 35
 x_player = 0
 y_player = 0
-damage = 300
+damage = 10
 health = 100
 
 potka = 3
@@ -54,6 +54,7 @@ damage_bar = pygame.image.load('img/potions/damage_bar.png').convert_alpha()
 start_btn_img = pygame.image.load('img/menu/start.png').convert_alpha()
 exit_btn_img = pygame.image.load('img/menu/exit.png').convert_alpha()
 start_img = pygame.image.load('img/menu/menu.png').convert_alpha()
+restart_btn_img = pygame.image.load('img/menu/restart.png').convert_alpha()
 
 # inicjalizacja zdj tal
 img_list = []
@@ -100,13 +101,15 @@ class Player(pygame.sprite.Sprite):
         self.alive = True
         self.shoot_cd = 0
         self.heal_potion_amount = 1
-        self.speed_potion_amount = 10
+        self.speed_potion_amount = 1
         self.damage_potion_amount = 1
         self.runs = False
         self.speed_potion_cd = 0
         self.heal_potion_cd = 0
         self.damage_potion_cd = 0
         self.prev_damage = 10
+        self.damage_potion_use = False
+        self.add_damage = damage
 
         # Movement
         self.speed = 1
@@ -119,15 +122,19 @@ class Player(pygame.sprite.Sprite):
         self.animation_list1 = []
         self.index1 = 0
         self.u_time = pygame.time.get_ticks()
+
         for i in range(5):
             image = pygame.image.load(f'img/postac/stay_animation/p{i}.png').convert_alpha()
             image = pygame.transform.scale(image, (int(image.get_width()), int(image.get_height())))
             self.animation_list.append(image)
+
         for i in range(7):
             image1 = pygame.image.load(f'img/postac/animation/p{i}.png').convert_alpha()
             image1 = pygame.transform.scale(image1, (int(image1.get_width()), int(image1.get_height())))
             self.animation_list1.append(image1)
+
         self.img = self.animation_list[self.index]
+
         self.img1 = self.animation_list1[self.index1]
 
         # player hitbox, cordinates and create player rectangle
@@ -140,6 +147,7 @@ class Player(pygame.sprite.Sprite):
     def alive_check(self):
         if self.health > self.max_health:
             self.health = self.max_health
+
         if self.health <= 0:
             self.alive = False
         if self.shoot_cd > 0:
@@ -164,7 +172,7 @@ class Player(pygame.sprite.Sprite):
 
         if self.damage_potion_cd == 1:
             global damage
-            damage = damage / 2
+            damage = math.ceil(damage / 2)
 
 
     def shoot(self):
@@ -219,9 +227,10 @@ class Player(pygame.sprite.Sprite):
             if self.damage_potion_cd == 0:
                 if keys[pygame.K_r]:
                     global damage
-                    self.prev_damage = damage
-                    damage = damage * 2
+                    self.add_damage = damage
+                    damage += self.add_damage
                     self.damage_potion_cd = 400
+                    self.damage_potion_use = True
 
         # collisions
         for tile in world.obstacle_list:
@@ -242,8 +251,11 @@ class Player(pygame.sprite.Sprite):
                 if self.rect.colliderect(endportal_rect):
                     global health
                     health += 100
-                    self.max_health = health
-                    damage += 20
+                    if not self.damage_potion_use:
+                        damage += 20
+                    if self.damage_potion_use:
+                        self.damage_potion_use = False
+                        damage += 40
                     level_complete = True
 
         for potion in potions_group:
@@ -275,6 +287,7 @@ class Player(pygame.sprite.Sprite):
             if self.index == 5:
                 self.index = 1
             self.u_time = pygame.time.get_ticks()
+
 
     def draw(self):
         if self.runs:
@@ -348,13 +361,16 @@ class World():
                         portal_rect = (img_rect)
                     if tile == 32:
                         if level == 2:
-                            bosses = Boss(x * tile_size, y * tile_size, 'b', 5, 600)
+                            bosses = Boss(x * tile_size, y * tile_size, 'b', 5, 600, 'melee')
+                            boss_group.add(bosses)
+                        if level == 4:
+                            bosses = Boss(x * tile_size, y* tile_size, 'g', 25, 2000, 'range')
                             boss_group.add(bosses)
                     if tile == 14:
                         if level == 1 or level == 2:
                             enemy = Enemy(x * tile_size, y * tile_size, 1, 100, 'z')
                             enemies_group.add(enemy)
-                        if level == 3:
+                        if level == 3 or level == 4:
                             enemy = Enemy(x * tile_size, y * tile_size, 5, 450, 'g')
                             enemies_group.add(enemy)
                     if tile != -1 and tile != 14 and tile != 32:
@@ -530,8 +546,48 @@ class Enemy(pygame.sprite.Sprite):
             self.attack = False
 
 
+class Bombs(pygame.sprite.Sprite):
+    def __init__(self, x, y, file):
+        pygame.sprite.Sprite.__init__(self)
+        self.touch = False
+        self.hit = False
+        self.last_shot_time = 0
+        self.animation_list = []
+        self.index = 0
+        self.u_time = pygame.time.get_ticks()
+        for i in range(7):
+            image = pygame.image.load(f'img/enemies/bomb_animation/g{i}.png').convert_alpha()
+            image = pygame.transform.scale(image, (int(image.get_width()), int(image.get_height())))
+            self.animation_list.append(image)
+        self.img = self.animation_list[self.index]
+        self.rect = self.img.get_rect()
+        self.rect.center = (x, y)
+
+    def update_animation(self):
+        cd = 100
+        self.img = self.animation_list[self.index]
+        if pygame.time.get_ticks() - self.u_time > cd:
+            self.index += 1
+            if self.index == 7:
+                self.touch = True
+                self.index = 0
+            self.u_time = pygame.time.get_ticks()
+
+    def custom_draw(self):
+        window.blit(self.img, self.rect)
+
+    def update_collision(self):
+        if self.touch:
+            if pygame.sprite.spritecollide(player, bomb_group, False):
+                if player.alive:
+                    self.hit = True
+                    player.health -= bosses.damage
+                    self.kill()
+            else:
+                self.kill()
+
 class Boss(pygame.sprite.Sprite):
-    def __init__(self, x, y, file, damage, health):
+    def __init__(self, x, y, file, damage, health, type):
         pygame.sprite.Sprite.__init__(self)
         self.image = pygame.image.load(f'img/enemies/{file}0.png')
         self.rect = self.image.get_rect()
@@ -545,18 +601,19 @@ class Boss(pygame.sprite.Sprite):
         self.dy = 0
         self.speed = 1
         self.distance_for_move = 256
-
+        self.type = type
         self.last_shot_time = 0
-        self.animation_list = []
-        self.index = 0
-        self.u_time = pygame.time.get_ticks()
-        for i in range(5):
-            image = pygame.image.load(f'img/enemies/boss_attack/{file}{i}.png').convert_alpha()
-            image = pygame.transform.scale(image, (int(image.get_width()), int(image.get_height())))
-            self.animation_list.append(image)
-        self.img = self.animation_list[self.index]
-        self.width = self.img.get_width()
-        self.height = self.img.get_height()
+        if self.type == 'melee':
+            self.animation_list = []
+            self.index = 0
+            self.u_time = pygame.time.get_ticks()
+            for i in range(5):
+                image = pygame.image.load(f'img/enemies/boss_attack/{file}{i}.png').convert_alpha()
+                image = pygame.transform.scale(image, (int(image.get_width()), int(image.get_height())))
+                self.animation_list.append(image)
+            self.img = self.animation_list[self.index]
+            self.width = self.img.get_width()
+            self.height = self.img.get_height()
 
     def update_animation(self):
         cd = 20
@@ -618,9 +675,19 @@ class Boss(pygame.sprite.Sprite):
         self.rect.x += self.dx
         self.rect.y += self.dy
 
+    def bomb_attack(self):
+        distance_to_player = math.sqrt((player.rect.x - self.rect.x) ** 2 + (player.rect.y - self.rect.y) ** 2)
+        if time.time() - self.last_shot_time > 2:
+            bomb = Bombs(player.rect.x, player.rect.y, 'g')
+            bomb_group.add(bomb)
+            self.last_shot_time = time.time()
+
     def draw(self):
-        if self.attack:
-            window.blit(self.img, (self.rect))
+        if self.type == 'melee':
+            if self.attack:
+                window.blit(self.img, (self.rect))
+            else:
+                window.blit(self.image, self.rect)
         else:
             window.blit(self.image, self.rect)
     def custom_update(self):
@@ -682,6 +749,7 @@ def reset():
     bullet_group.empty()
     enemies_group.empty()
     boss_group.empty()
+    bomb_group.empty()
 
     data = []
     for row in range(ROWS):
@@ -706,6 +774,7 @@ enemies_group = pygame.sprite.Group()
 bullet_group = pygame.sprite.Group()
 boss_group = pygame.sprite.Group()
 potions_group = pygame.sprite.Group()
+bomb_group = pygame.sprite.Group()
 
 
 # initialization other units
@@ -718,6 +787,7 @@ speed_potion_duration = HealthBar(45, 50, player.speed_potion_cd, 400)
 damage_potion_duration = HealthBar(45,100, player.damage_potion_cd, 400)
 start_btn = Button(550,450 , start_btn_img, 0.5)
 exit_btn = Button(550, 530, exit_btn_img, 0.5)
+restart_btn = Button(570,350, restart_btn_img, 0.5)
 
 
 # initialization variables
@@ -763,6 +833,10 @@ while run:
             potion.rect.x += camera_offset[0]
             potion.rect.y += camera_offset[1]
 
+        for bomb in bomb_group:
+            bomb.rect.x += camera_offset[0]
+            bomb.rect.y += camera_offset[1]
+
         for enemy in enemies_group:
             if enemy.health <= 0:
                 damage += 1
@@ -795,11 +869,17 @@ while run:
 
         for bosses in boss_group:
             if bosses.alive:
-                bosses.draw()
-                bosses.update_animation()
-                bosses.attack_()
-                bosses.custom_update()
-                bosses.ai()
+                if bosses.type == 'melee':
+                    bosses.draw()
+                    bosses.update_animation()
+                    bosses.attack_()
+                    bosses.custom_update()
+                    bosses.ai()
+                elif bosses.type == 'range':
+                    bosses.custom_update()
+                    bosses.draw()
+                    bosses.bomb_attack()
+
 
         player.rect.x += camera_offset[0]
         player.rect.y += camera_offset[1]
@@ -823,7 +903,29 @@ while run:
                             world_data[x][y] = int(tile)
                 world = World()
                 world.process_data(world_data)
+                player.rect.x = x_player
+                player.rect.y = y_player
+                potions_group.draw(window)
+                for potion in potions_group:
+                    potion.custom_update()
+                # update position camera
+                update_camera(player.rect.center)
+        else:
+            if restart_btn.draw(window):
+                portal_rect = (0, 0, 0, 0)
+                if level % 2 == 0 : level -= 1
+                world_data = reset()
+                with open(f'img/map/lvl{level}.csv', newline='') as csvfile:
+                    reader = csv.reader(csvfile, delimiter=',')
+                    for x, row in enumerate(reader):
+                        for y, tile in enumerate(row):
+                            world_data[x][y] = int(tile)
+                world = World()
+                world.process_data(world_data)
                 player = Player(x_player, y_player)
+                potions_group.draw(window)
+                for potion in potions_group:
+                    potion.custom_update()
                 # update position camera
                 update_camera(player.rect.center)
 
@@ -831,11 +933,16 @@ while run:
         bullet_group.update()
         bullet_group.draw(window)
 
+        for bomb in bomb_group:
+            bomb.update_animation()
+            bomb.custom_draw()
+            bomb.update_collision()
+
         potions_group.draw(window)
         for potion in potions_group:
             potion.custom_update()
 
-        vignette(0, 0)
+        #vignette(0, 0)
         healthbar.draw(player.health, player.max_health)
 
         if player.speed_potion_cd > 0:
@@ -857,5 +964,4 @@ while run:
             sys.exit(0)
         elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             run = False
-    print(damage, player.health)
     pygame.display.update()
